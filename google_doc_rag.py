@@ -8,30 +8,37 @@ from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Document
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Document, SimpleVectorStore, Node
 from llama_index.core.storage.storage_context import StorageContext
 
+from .load_keys import load_open_ai_key
+
+
+load_open_ai_key()
 
 # Authenticate and Access Google Drive API
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/documents.readonly']
 CREDS_FILE = 'credentials-gdrive.json'
 
 
-def summary_splitter(documents):
+def custom_chunk_splitter(documents):
     """
-    Custom splitter that divides documents based on summary structure
-    (e.g., titles with larger fonts or specific markers like '###').
+    Split documents into chunks based on '###' delimiters.
     """
-    custom_chunks = []
-
+    chunks = []
     for doc in documents:
-        # Example: Split by markers like '###' indicating a new section
-        sections = doc.text.split('###')
-        for section in sections:
-            if section.strip():  # Avoid empty chunks
-                custom_chunks.append(Document(text=section.strip()))
-
-    return custom_chunks
+        raw_text = doc.text
+        doc_chunks = raw_text.split('###')  # Split text into chunks by delimiter
+        for i, chunk in enumerate(doc_chunks):
+            if chunk.strip():  # Ignore empty chunks
+                chunks.append(
+                    Node(
+                        doc_id=f"{doc.metadata.get('source', 'doc')}_chunk_{i}",
+                        text=chunk.strip(),
+                        extra_info=doc.metadata
+                    )
+                )
+    return chunks
 
 
 class RagGoogleDoc:
@@ -124,25 +131,19 @@ class RagGoogleDoc:
         documents = self.get_document_and_texts()
         self.save_documents(documents)
 
-        # Ensure the save_index_address directory exists
+        # Apply custom chunk splitting
+        custom_chunks = custom_chunk_splitter(documents)
+
+        # Persist index with the chunks
         if self.save_index_address and not os.path.exists(self.save_index_address):
             os.makedirs(self.save_index_address)
 
-        # Load documents and split them
-        raw_documents = SimpleDirectoryReader(self.local_dir_docs).load_data()
-        custom_chunks = summary_splitter(raw_documents)
-        # custom_chunks = self.create_chunks_with_ids(doc_name, custom_chunks)
+        vector_store = SimpleVectorStore()
+        for chunk in custom_chunks:
+            vector_store.add_node(chunk)
 
-        # Load or create the index
-        if self.save_index_address and os.path.exists(os.path.join(self.save_index_address, '/docstore.json')):
-            storage_context = StorageContext.from_defaults(persist_dir=self.save_index_address)
-            index = VectorStoreIndex(storage_context=storage_context)
-        else:
-            index = VectorStoreIndex.from_documents(custom_chunks)
-            if self.save_index_address:
-                index.storage_context.persist(persist_dir=self.save_index_address)
-
-        return index
+        storage_context = StorageContext.from_defaults(vector_store=vector_store)
+        return storage_context
 
 
 # Step 5: Query the RAG system
