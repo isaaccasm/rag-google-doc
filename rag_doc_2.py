@@ -10,14 +10,12 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
-from llama_index.core import VectorStoreIndex, Document  # , ServiceContext, SimpleDirectoryReader
+from llama_index.core import VectorStoreIndex, Document
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 from llama_index.vector_stores.faiss import FaissVectorStore
 from llama_index.core.storage.storage_context import StorageContext
-# from llama_index.core.retrievers import VectorIndexRetriever
-# from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.schema import Node, TextNode
+from llama_index.core.schema import TextNode
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core import get_response_synthesizer, load_index_from_storage
@@ -178,7 +176,7 @@ class RagGoogleDoc:
         nodes = []
 
         for doc in documents:
-            # ✅ Split text into chunks using 'self.splitting_symbol'
+            # Split text into chunks using 'self.splitting_symbol'
             chunks = doc.text.split(self.splitting_symbol)
             chunks = [chunk.strip() for chunk in chunks if chunk.strip()]  # Remove empty sections
 
