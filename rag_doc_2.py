@@ -74,7 +74,7 @@ class RagGoogleDoc:
 
         # Load OpenAI LLM and Embedding Model
         self.llm = OpenAI(model=model)  # You can change to "gpt-3.5-turbo"
-        self.embed_model = OpenAIEmbedding(model="text-embedding-ada-002")  # OpenAI embedding model
+        self.embed_model = OpenAIEmbedding(model="text-embedding-3-small")  # OpenAI embedding model
 
     def _get_google_docs_text(self, doc_id):
         """
