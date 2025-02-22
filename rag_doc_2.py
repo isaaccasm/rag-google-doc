@@ -76,7 +76,7 @@ class RagGoogleDoc:
         self.llm = OpenAI(model=model)  # You can change to "gpt-3.5-turbo"
         self.embed_model = OpenAIEmbedding(model="text-embedding-ada-002")  # OpenAI embedding model
 
-    def get_google_docs_text(self, doc_id):
+    def _get_google_docs_text(self, doc_id):
         """
         Fetches text content from a Google Document.
         """
@@ -102,17 +102,15 @@ class RagGoogleDoc:
 
         return output
 
-    def get_documents(self):
+    def _get_documents(self):
         """
         Fetch Google Docs files from specified files or folders, handling both cases correctly.
         """
 
         def fetch_files(item_id):
-            """Fetch a single Google Doc if it's a file, or all docs recursively if it's a folder."""
-            documents = []
-
+            """Recursively fetch Google Docs from a file or folder."""
             file_info = self.drive_service.files().get(
-                fileId=item_id, fields="id, name, mimeType, parents"
+                fileId=item_id, fields="id, name, mimeType"
             ).execute()
 
             if not file_info:  # If the API didn't return anything, exit
@@ -122,39 +120,37 @@ class RagGoogleDoc:
             mime_type = file_info["mimeType"]
             file_name = file_info["name"]
 
-            # **CASE 1: If it is a FILE, fetch content and return**
+            # If it's a Google Doc, fetch its content
             if mime_type == "application/vnd.google-apps.document":
                 print(f"📄 Fetching document: {file_name}")
-                text = self.get_google_docs_text(item_id)
+                text = self._get_google_docs_text(item_id)
                 return [Document(text=text, metadata={"source": file_name})]
 
-            # **CASE 2: If it is a FOLDER, process normally**
+            # If it's a folder, recursively process its contents
             elif mime_type == "application/vnd.google-apps.folder":
                 print(f"📂 Entering folder: {file_name}")
 
-                # Fetch Google Docs inside the folder
-                files_query = f"'{item_id}' in parents and mimeType='application/vnd.google-apps.document'"
-                files_results = self.drive_service.files().list(q=files_query, fields="files(id, name)").execute()
+                documents = []
+
+                # Fetch all files (Google Docs) inside the folder
+                files_query = f"'{item_id}' in parents"
+                files_results = self.drive_service.files().list(q=files_query,
+                                                                fields="files(id, name, mimeType)").execute()
                 files = files_results.get("files", [])
 
                 for file in files:
                     doc_id = file["id"]
-                    doc_name = file["name"]
-                    print(f"📄 Fetching document: {doc_name}")
-                    text = self.get_google_docs_text(doc_id)
-                    documents.append(Document(text=text, metadata={"source": doc_name}))
+                    doc_mime = file["mimeType"]
 
-                # Fetch subfolders and process recursively
-                subfolders_query = f"'{item_id}' in parents and mimeType='application/vnd.google-apps.folder'"
-                subfolders_results = self.drive_service.files().list(q=subfolders_query,
-                                                                     fields="files(id, name)").execute()
-                subfolders = subfolders_results.get("files", [])
+                    # Process Google Docs or subfolders recursively
+                    if doc_mime == "application/vnd.google-apps.document":
+                        print(f"📄 Fetching document: {file['name']}")
+                        text = self._get_google_docs_text(doc_id)
+                        documents.append(Document(text=text, metadata={"source": file["name"]}))
 
-                for subfolder in subfolders:
-                    subfolder_id = subfolder["id"]
-                    subfolder_name = subfolder["name"]
-                    print(f"📁 Entering subfolder: {subfolder_name}")
-                    documents.extend(fetch_files(subfolder_id))  # Recursively fetch files
+                    elif doc_mime == "application/vnd.google-apps.folder":
+                        print(f"📂 Entering subfolder: {file['name']}")
+                        documents.extend(fetch_files(doc_id))  # Recursively fetch files
 
                 return documents
 
@@ -162,16 +158,19 @@ class RagGoogleDoc:
                 print(f"⚠️ Skipping unsupported file type: {file_name} ({mime_type})")
                 return []
 
-        # Process all IDs (either folders or files)
+        # Process all provided IDs (folders or files)
         documents = []
         for item_id in self.folder_ids:
             documents.extend(fetch_files(item_id))
 
         return documents
 
-    def save_index(self, documents):
+
+    def _split_documents_into_text_chunks(self, documents):
         """
-        Save documents into a FAISS vector index, splitting them based on self.splitting_symbol delimiters.
+        Split all the documents using the self.splitting_symbol
+        :param documents: A list of documents
+        :return: A group of nodes
         """
         nodes = []
 
@@ -187,6 +186,13 @@ class RagGoogleDoc:
                         metadata={"source": doc.metadata["source"], "chunk_id": i}  # ✅ Store text in metadata
                     )
                 )
+
+        return nodes
+
+    def _save_index(self, nodes):
+        """
+        Save documents into a FAISS vector index, splitting them based on self.splitting_symbol delimiters.
+        """
 
         # Use FAISS for storing vector embeddings
         # A FAISS (Facebook AI Similarity Search) vector store is a high-performance library for storing and searching
@@ -213,7 +219,7 @@ class RagGoogleDoc:
 
         return index  # Return the FAISS-backed index
 
-    def load_index(self):
+    def _load_index(self):
         """
         Load FAISS vector index from storage.
         """
@@ -231,7 +237,7 @@ class RagGoogleDoc:
         """
         Query the stored index using an LLM.
         """
-        index = self.load_index()
+        index = self._load_index()
 
         # Create a retriever to fetch relevant text chunks
         retriever = VectorIndexRetriever(index=index, similarity_top_k=3)  # Fetch top 3 relevant chunks
@@ -252,17 +258,18 @@ class RagGoogleDoc:
 
         return response.response
 
-    def run(self):
+    def create_index(self):
         """
         Main function to fetch, process, and index documents.
         """
-        documents = self.get_documents()
+        documents = self._get_documents()
         if not documents:
             print("No documents found.")
             return None
 
+        text_chunks = self._split_documents_into_text_chunks(documents)
         # Create and save FAISS index
-        index = self.save_index(documents)
+        index = self._save_index(text_chunks)
         print("Document indexing complete. You can now query the documents.")
 
         return index
@@ -351,8 +358,8 @@ if __name__ == '__main__':
     ]
     files = ['1SDcxHfsbM4s3Xl3t3KEsuQvTWeyLtCE4GQpwkCd78Ck']
 
-    rag_obj = RagGoogleDoc(google_drive_folder_ids[0], save_index_address='Data/google_doc_index')
-    db = rag_obj.run()
+    rag_obj = RagGoogleDoc(google_drive_folder_ids[0], save_index_address='Data/google_doc_index2')
+    db = rag_obj.create_index()
 
     query = 'Summarise the paper: Region Refinement Network for Salient Object Detection'
     rag_obj.query_index(query)
