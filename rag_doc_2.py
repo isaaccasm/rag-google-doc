@@ -400,22 +400,3 @@ class RagGoogleDoc:
                 text = 'Not found'
                 colour = "\033[91m"
             print(f'{f}: {colour}{text}{reset_colour}{parent_text}')
-
-
-if __name__ == '__main__':
-    logging.basicConfig()
-    logging.getLogger().setLevel(logging.INFO)
-
-    google_drive_folder_ids = [
-        # '14rNXFJe-WnK3AyIoDSX_8zNCVVFiOXed',
-        # '12HEHe7876pCtuL5Z4makI-5E5cd2fLx4'
-        '1US5wqXvJYw6u98yCfxsr9E42lmoaSDyp'
-    ]
-
-    rag_obj = RagGoogleDoc(google_drive_folder_ids[0], save_index_address='Data/google_db')
-    db = rag_obj.create_index()
-
-    # query = 'Summarise the paper: Region Refinement Network for Salient Object Detection'
-    query = 'What algorithm of salient object detection can be implemented in keras more quickly?'
-    response = rag_obj.query_index(query)
-    print(response)
