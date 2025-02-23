@@ -4,6 +4,7 @@
 
 import logging
 import os
+from typing import List
 
 import faiss
 from googleapiclient.discovery import build
@@ -41,11 +42,44 @@ logger = logging.getLogger(__name__)
 
 
 class RagGoogleDoc:
+    """
+    A class for creating and querying a FAISS vector database using Google Docs.
+
+    This class enables retrieval-augmented generation (RAG) by fetching documents
+    from Google Drive, processing their content, indexing them with FAISS,
+    and querying the indexed data for relevant information.
+
+    Attributes:
+    -----------
+    folder_ids : list
+        A list of Google Drive folder or file IDs containing the Google Docs to index.
+
+    model : str, optional
+        The embedding model to use for generating vector representations of text.
+        Defaults to gpt-4o-mini.
+
+    local_dir_docs : str, optional
+        The local directory where fetched Google Docs are temporarily stored.
+        If not provided, a default directory is used.
+
+    save_index_address : str, optional
+        The directory where the FAISS index and associated metadata are saved.
+
+    Methods:
+    --------
+    create_index():
+        Retrieves Google Docs, processes them into text chunks,
+        and builds a FAISS vector index.
+
+    query_index(query: str):
+        Searches the FAISS index for the most relevant text chunks based on the query
+        and returns a response generated using an LLM.
+    """
     def __init__(self,
-                 folder_ids,
-                 model="gpt-4o-mini",
-                 local_dir_docs=os.path.join(DATA_ROOT, 'Docs'),
-                 save_index_address=os.path.join(DATA_ROOT, 'faiss_index')):
+                 folder_ids: List[str],
+                 model: str = "gpt-4o-mini",
+                 local_dir_docs: str = os.path.join(DATA_ROOT, 'Docs'),
+                 save_index_address: str = os.path.join(DATA_ROOT, 'faiss_index')):
         creds = None
         self.token_file = os.path.join(local_dir_docs, 'token.json')
 
@@ -377,7 +411,6 @@ if __name__ == '__main__':
         # '12HEHe7876pCtuL5Z4makI-5E5cd2fLx4'
         '1US5wqXvJYw6u98yCfxsr9E42lmoaSDyp'
     ]
-    files = ['1SDcxHfsbM4s3Xl3t3KEsuQvTWeyLtCE4GQpwkCd78Ck']
 
     rag_obj = RagGoogleDoc(google_drive_folder_ids[0], save_index_address='Data/google_db')
     db = rag_obj.create_index()
