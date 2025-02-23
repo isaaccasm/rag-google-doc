@@ -212,10 +212,19 @@ class RagGoogleDoc:
         # Store embeddings by passing **chunked** documents into the FAISS index
         index = VectorStoreIndex(nodes, storage_context=storage_context)
 
+        # Debugging: Check if FAISS index contains anything
+        print(f"🔍 FAISS index contains {faiss_index.ntotal} vectors.")
+
         # Ensure the save directory exists
         if self.save_index_address:
             os.makedirs(self.save_index_address, exist_ok=True)
+            faiss_index_path = os.path.join(self.save_index_address, "faiss")
+
             index.storage_context.persist(persist_dir=self.save_index_address)
+
+            if not os.path.isfile(faiss_index_path):
+                print(f"⚠️ FAISS vector index not found at {faiss_index_path}, attempting to save it manually.")
+                faiss.write_index(faiss_index, faiss_index_path)
 
         return index  # Return the FAISS-backed index
 
@@ -223,9 +232,9 @@ class RagGoogleDoc:
         """
         Load FAISS vector index from storage.
         """
-        filename_index = os.path.join(self.save_index_address, self.database_filename)
+        filename_index = os.path.join(self.save_index_address, 'index_store.json')
         if not os.path.exists(filename_index):
-            raise FileNotFoundError(f"FAISS index not found at {filename_index}")
+            raise FileNotFoundError(f"index not found at {filename_index}")
 
         vector_store = FaissVectorStore.from_persist_dir(self.save_index_address)
         storage_context = StorageContext.from_defaults(
@@ -268,6 +277,11 @@ class RagGoogleDoc:
             return None
 
         text_chunks = self._split_documents_into_text_chunks(documents)
+
+        if not text_chunks:
+            print("🚨 No nodes found! The FAISS index will be empty.")
+            return None
+
         # Create and save FAISS index
         index = self._save_index(text_chunks)
         print("Document indexing complete. You can now query the documents.")
@@ -358,8 +372,8 @@ if __name__ == '__main__':
     ]
     files = ['1SDcxHfsbM4s3Xl3t3KEsuQvTWeyLtCE4GQpwkCd78Ck']
 
-    rag_obj = RagGoogleDoc(google_drive_folder_ids[0], save_index_address='Data/google_doc_index2')
-    db = rag_obj.create_index()
+    rag_obj = RagGoogleDoc(google_drive_folder_ids[0], save_index_address='Data/google_db')
+    #db = rag_obj.create_index()
 
     query = 'Summarise the paper: Region Refinement Network for Salient Object Detection'
     rag_obj.query_index(query)
