@@ -2,6 +2,7 @@
 # pip install llama-index google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client openai
 # pip install faiss-cpu llama-index-vector-stores-faiss
 
+import logging
 import os
 
 import faiss
@@ -34,6 +35,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/documents.readonly"
 ]
 CREDS_FILE = 'credentials-gdrive.json'
+
+
+logger = logging.getLogger(__name__)
 
 
 class RagGoogleDoc:
@@ -114,7 +118,7 @@ class RagGoogleDoc:
             ).execute()
 
             if not file_info:  # If the API didn't return anything, exit
-                print(f"🚨 File or folder with ID '{item_id}' not found.")
+                logger.error(f"🚨 File or folder with ID '{item_id}' not found.")
                 return []
 
             mime_type = file_info["mimeType"]
@@ -122,13 +126,13 @@ class RagGoogleDoc:
 
             # If it's a Google Doc, fetch its content
             if mime_type == "application/vnd.google-apps.document":
-                print(f"📄 Fetching document: {file_name}")
+                logger.info(f"📄 Fetching document: {file_name}")
                 text = self._get_google_docs_text(item_id)
                 return [Document(text=text, metadata={"source": file_name})]
 
             # If it's a folder, recursively process its contents
             elif mime_type == "application/vnd.google-apps.folder":
-                print(f"📂 Entering folder: {file_name}")
+                logger.info(f"📂 Entering folder: {file_name}")
 
                 documents = []
 
@@ -144,18 +148,18 @@ class RagGoogleDoc:
 
                     # Process Google Docs or subfolders recursively
                     if doc_mime == "application/vnd.google-apps.document":
-                        print(f"📄 Fetching document: {file['name']}")
+                        logger.debug(f"📄 Fetching document: {file['name']}")
                         text = self._get_google_docs_text(doc_id)
                         documents.append(Document(text=text, metadata={"source": file["name"]}))
 
                     elif doc_mime == "application/vnd.google-apps.folder":
-                        print(f"📂 Entering subfolder: {file['name']}")
+                        logger.debug(f"📂 Entering subfolder: {file['name']}")
                         documents.extend(fetch_files(doc_id))  # Recursively fetch files
 
                 return documents
 
             else:
-                print(f"⚠️ Skipping unsupported file type: {file_name} ({mime_type})")
+                logger.debug(f"⚠️ Skipping unsupported file type: {file_name} ({mime_type})")
                 return []
 
         # Process all provided IDs (folders or files)
@@ -213,7 +217,7 @@ class RagGoogleDoc:
         index = VectorStoreIndex(nodes, storage_context=storage_context)
 
         # Debugging: Check if FAISS index contains anything
-        print(f"🔍 FAISS index contains {faiss_index.ntotal} vectors.")
+        logger.debug(f"🔍 FAISS index contains {faiss_index.ntotal} vectors.")
 
         # Ensure the save directory exists
         if self.save_index_address:
@@ -223,7 +227,7 @@ class RagGoogleDoc:
             index.storage_context.persist(persist_dir=self.save_index_address)
 
             if not os.path.isfile(faiss_index_path):
-                print(f"⚠️ FAISS vector index not found at {faiss_index_path}, attempting to save it manually.")
+                logger.warning(f"⚠️ FAISS vector index not found at {faiss_index_path}, attempting to save it manually.")
                 faiss.write_index(faiss_index, faiss_index_path)
 
         return index  # Return the FAISS-backed index
@@ -263,7 +267,7 @@ class RagGoogleDoc:
 
         # Extract retrieved nodes (to ensure text retrieval works)
         for node in response.source_nodes:
-            print(f"🔹 Retrieved chunk: {node.text}")
+            logger.info(f"🔹 Retrieved chunk: {node.text}")
 
         return response.response
 
@@ -273,18 +277,18 @@ class RagGoogleDoc:
         """
         documents = self._get_documents()
         if not documents:
-            print("No documents found.")
+            logger.error("🚨 No documents found.")
             return None
 
         text_chunks = self._split_documents_into_text_chunks(documents)
 
         if not text_chunks:
-            print("🚨 No nodes found! The FAISS index will be empty.")
+            logger.error("🚨 No nodes found! The FAISS index will be empty.")
             return None
 
         # Create and save FAISS index
         index = self._save_index(text_chunks)
-        print("Document indexing complete. You can now query the documents.")
+        logger.info("Document indexing complete. You can now query the documents.")
 
         return index
 
@@ -365,6 +369,9 @@ class RagGoogleDoc:
 
 
 if __name__ == '__main__':
+    logging.basicConfig()
+    logging.getLogger().setLevel(logging.INFO)
+
     google_drive_folder_ids = [
         # '14rNXFJe-WnK3AyIoDSX_8zNCVVFiOXed',
         # '12HEHe7876pCtuL5Z4makI-5E5cd2fLx4'
@@ -373,7 +380,9 @@ if __name__ == '__main__':
     files = ['1SDcxHfsbM4s3Xl3t3KEsuQvTWeyLtCE4GQpwkCd78Ck']
 
     rag_obj = RagGoogleDoc(google_drive_folder_ids[0], save_index_address='Data/google_db')
-    #db = rag_obj.create_index()
+    db = rag_obj.create_index()
 
-    query = 'Summarise the paper: Region Refinement Network for Salient Object Detection'
-    rag_obj.query_index(query)
+    # query = 'Summarise the paper: Region Refinement Network for Salient Object Detection'
+    query = 'What algorithm of salient object detection can be implemented in keras more quickly?'
+    response = rag_obj.query_index(query)
+    print(response)
